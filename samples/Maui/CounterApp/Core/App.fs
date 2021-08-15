@@ -74,7 +74,7 @@ module App =
                     
                     StatelessLabel()
                     
-                ]).spacing(10)
+                ]).spacing(10.)
             )
         ])
         
