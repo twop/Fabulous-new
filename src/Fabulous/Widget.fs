@@ -17,12 +17,22 @@ module Attributes =
         interface
         end
 
+    [<Struct>]
+    [<RequireQualifiedAccess>]
+    type AttributeComparison =
+        | Same
+        | NotSure
+        | Different of data: obj option
+
+    type AttributeComparer<'modelType> = 'modelType -> 'modelType -> AttributeComparison
+
     type AttributeDefinition<'inputType, 'modelType> =
         {
             Key: AttributeKey
             Name: string
             DefaultValue: 'modelType
             Convert: 'inputType -> 'modelType
+            Compare: AttributeComparer<'modelType>
         }
         interface IAttributeDefinition
 
@@ -48,6 +58,7 @@ module Attributes =
         (name: string)
         (defaultValue: 'modelType)
         (convert: 'inputType -> 'modelType)
+        (compare: 'modelType -> 'modelType -> AttributeComparison)
         : AttributeDefinition<'inputType, 'modelType> =
 
         let key = AttributeKey(_attributes.Count + 1)
@@ -58,15 +69,33 @@ module Attributes =
                 Convert = convert
                 Name = name
                 DefaultValue = defaultValue
+                Compare = compare
             }
 
         _attributes.Add(key, definition)
         definition
 
-    let createDefinition<'T> name defaultValue =
-        createDefinitionWithConverter<'T, 'T> name defaultValue id
+    let createDefinition<'T> comparer name defaultValue =
+        createDefinitionWithConverter<'T, 'T> name defaultValue id comparer
 
+    let inline define<'T when 'T: equality> name defaultValue =
+        createDefinition<'T>
+            (fun a b ->
+                if a = b then
+                    AttributeComparison.Same
+                else
+                    (AttributeComparison.Different None))
+            name
+            defaultValue
 
+    [<RequireQualifiedAccess>]
+    type AttributeDiff =
+        | NeedsChildrenComparison of struct (Attribute * Attribute)
+        | Different of struct (Attribute * Attribute * obj option)
+        | Added of Attribute
+        | Removed of Attribute
+
+    let compareAttributes (prev: Attribute []) (next: Attribute []) : AttributeDiff list = []
 
 /// Base logical element
 type IWidget =
@@ -121,3 +150,23 @@ type IStatefulWidget<'arg, 'model, 'msg, 'view when 'view :> IWidget> =
     abstract Init : 'arg -> 'model
     abstract Update : 'msg * 'model -> 'model
     abstract View : 'model * Attribute [] -> 'view
+
+
+//-----Update sketch------
+module Reconciler =
+    type UpdateResult =
+        | Done
+        | UpdateNext of (struct (obj * IWidget)) list // control + IWidget for the control
+
+    let update control (widget: IWidget) = ()
+    // 1. compare attributes for control and widget
+    // 2. apply diff (should be a method on control). e.g control.ApplyDiff(diff)
+    // 3. apply returns UpdateResult
+    // 4. if we have 'Done' then exit
+    // 5. if we have 'UpdateNext' go through the list and recursively call update on each element
+    
+    // Questions
+    // 1. should adding/removing children should be done here as well?
+    // 2. Should 'mounting' views done by core framework or should be part of MAUI? I think the latter is fine
+    // 3. Should widgets have 1st class parent -> child relationships like in react?
+    // Meaning that we can fully control creations of new controls via core

@@ -129,6 +129,7 @@ module LayoutThings =
 
 
 
+
 type FabulousLabel() =
     member val Attributes: Attribute [] = [||]
     member val Bounds: Rectangle = Rectangle.Zero with get, set
@@ -234,7 +235,7 @@ type FabulousButton() =
         member this.Clicked() =
             match A.Button.Clicked.Get this.Attributes with
             | None -> ()
-            | Some onClicked -> this.Dispatch(onClicked ())
+            | Some msg -> this.Dispatch(msg)
 
         member this.Pressed() = failwith "todo"
         member this.Released() = failwith "todo"
@@ -405,14 +406,14 @@ type ButtonWidget =
     // TODO add typesafety to Widgets in general
     // probably they needs to be parametrized by Msg
     // in particular obj below should be replaced by Msg
-    static member inline Create(text: string, clicked: (unit -> obj)) =
+    static member inline Create(text: string, clicked: (#obj)) =
         register<ButtonWidget, FabulousButton> ()
 
         {
             Attributes =
                 [|
                     A.Text.Text.WithValue(text)
-                    A.Button.Clicked.WithValue(Some clicked)
+                    A.Button.Clicked.WithValue(Some (box clicked))
                 |]
         }
 
