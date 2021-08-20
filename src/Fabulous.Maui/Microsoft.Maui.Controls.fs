@@ -327,6 +327,7 @@ type ApplicationWidget(attributes: Attribute []) =
     interface IApplicationWidget
 
     interface IControlWidget with
+        member this.Attributes = attributes
         member this.Add(attribute) =
             addAttribute ApplicationWidget attributes attribute
 
@@ -347,6 +348,7 @@ type WindowWidget(attributes: Attribute []) =
     interface IWindowWidget
 
     interface IControlWidget with
+        member this.Attributes = attributes
         member this.Add(attribute) =
             addAttribute WindowWidget attributes attribute
 
@@ -356,7 +358,7 @@ type WindowWidget(attributes: Attribute []) =
 type StackLayoutWidget(attributes: Attribute []) =
     static do register<StackLayoutWidget, FabulousStackLayout> ()
 
-    static member inline Create(children: seq<IViewWidget>) =
+    static member inline Create(children: seq<IWidget>) =
         StackLayoutWidget(
             [|
                 A.Container.Children.WithValue(children)
@@ -366,6 +368,7 @@ type StackLayoutWidget(attributes: Attribute []) =
     interface IViewWidget
 
     interface IControlWidget with
+        member this.Attributes = attributes
         member this.Add(attribute) =
             addAttribute StackLayoutWidget attributes attribute
 
@@ -385,6 +388,7 @@ type LabelWidget(attributes: Attribute []) =
     interface IViewWidget
 
     interface IControlWidget with
+        member this.Attributes = attributes
         member this.Add(attribute) =
             addAttribute LabelWidget attributes attribute
 
@@ -398,6 +402,7 @@ type ButtonWidget =
     interface IViewWidget
 
     interface IControlWidget with
+        member this.Attributes = this.Attributes
         member this.Add(attribute) =
             addAttribute (fun attrs -> { Attributes = attrs }) this.Attributes attribute
 

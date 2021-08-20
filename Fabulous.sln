@@ -4,6 +4,9 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 VisualStudioVersion = 17.0.31606.5
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{17D6F0FE-4DC3-4D1D-9B21-7F03C85D94CF}"
+ProjectSection(SolutionItems) = preProject
+	src\global.json = src\global.json
+EndProjectSection
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "Fabulous", "src\Fabulous\Fabulous.fsproj", "{6C7591CF-8023-4867-9C60-A9A770D0E218}"
 EndProject
@@ -18,6 +21,8 @@ EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "CounterApp", "CounterApp", "{255AC245-C887-4209-BCA5-5BFEF51E182C}"
 EndProject
 Project("{6EC3EE1D-3C4E-46DD-8F32-0CC8E7565705}") = "CounterApp.Core", "samples\Maui\CounterApp\Core\CounterApp.Core.fsproj", "{19F7ED81-4EEB-40BE-8AAD-D1703252CFF9}"
+EndProject
+Project("{F2A71F9B-5D33-465A-A702-920D77279786}") = "Fabulous.Tests", "src\Fabulous.Tests\Fabulous.Tests.fsproj", "{359DE816-14F3-4CA6-B804-5720E5CA6D51}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -43,6 +48,10 @@ Global
 		{19F7ED81-4EEB-40BE-8AAD-D1703252CFF9}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{19F7ED81-4EEB-40BE-8AAD-D1703252CFF9}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{19F7ED81-4EEB-40BE-8AAD-D1703252CFF9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{359DE816-14F3-4CA6-B804-5720E5CA6D51}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{359DE816-14F3-4CA6-B804-5720E5CA6D51}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{359DE816-14F3-4CA6-B804-5720E5CA6D51}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{359DE816-14F3-4CA6-B804-5720E5CA6D51}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -54,6 +63,7 @@ Global
 		{9C3526BB-DD7C-4442-9E6A-78553AC253D8} = {86E2044D-6BDD-45B4-A1A3-65386D858230}
 		{255AC245-C887-4209-BCA5-5BFEF51E182C} = {9C3526BB-DD7C-4442-9E6A-78553AC253D8}
 		{19F7ED81-4EEB-40BE-8AAD-D1703252CFF9} = {255AC245-C887-4209-BCA5-5BFEF51E182C}
+		{359DE816-14F3-4CA6-B804-5720E5CA6D51} = {17D6F0FE-4DC3-4D1D-9B21-7F03C85D94CF}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {EDCA34D6-C112-4886-800A-76EBF629BCC7}

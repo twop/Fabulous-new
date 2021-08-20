@@ -9,7 +9,7 @@ open Microsoft.Maui.Primitives
 
 module Container =
     let Children =
-        Attributes.createDefinitionWithConverter<seq<IViewWidget>, IViewWidget []>
+        Attributes.createDefinitionWithConverter<seq<IWidget>, IWidget []>
             "Children"
             [||]
             Seq.toArray

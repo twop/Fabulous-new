@@ -43,8 +43,8 @@ module CounterWidget =
 
 
 module App =
-    open CounterWidget
-    open StatelessLabel
+//    open CounterWidget
+//    open StatelessLabel
     open type Fabulous.Maui.View
 
     type Model = { Count: int }
@@ -70,9 +70,9 @@ module App =
                     Button("Click me", Increment)
                         .font(Font.SystemFontOfSize(15.))
                         
-                    CounterWidget()
-                    
-                    StatelessLabel()
+//                    CounterWidget()
+//                    
+//                    StatelessLabel()
                     
                 ]).spacing(10.)
             )

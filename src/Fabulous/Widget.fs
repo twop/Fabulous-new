@@ -1,5 +1,6 @@
 namespace Fabulous
 
+
 open System
 open System.Collections.Generic
 open System.Runtime.CompilerServices
@@ -27,20 +28,16 @@ module Attributes =
     type AttributeComparer<'modelType> = 'modelType -> 'modelType -> AttributeComparison
 
     type AttributeDefinition<'inputType, 'modelType> =
-        {
-            Key: AttributeKey
-            Name: string
-            DefaultValue: 'modelType
-            Convert: 'inputType -> 'modelType
-            Compare: AttributeComparer<'modelType>
-        }
+        { Key: AttributeKey
+          Name: string
+          DefaultValue: 'modelType
+          Convert: 'inputType -> 'modelType
+          Compare: AttributeComparer<'modelType> }
         interface IAttributeDefinition
 
         member x.WithValue(value) =
-            {
-                Key = x.Key
-                Value = x.Convert(value)
-            }
+            { Key = x.Key
+              Value = x.Convert(value) }
 
         member x.Get(attributes: Attribute []) =
             let attr =
@@ -64,13 +61,11 @@ module Attributes =
         let key = AttributeKey(_attributes.Count + 1)
 
         let definition =
-            {
-                Key = key
-                Convert = convert
-                Name = name
-                DefaultValue = defaultValue
-                Compare = compare
-            }
+            { Key = key
+              Convert = convert
+              Name = name
+              DefaultValue = defaultValue
+              Compare = compare }
 
         _attributes.Add(key, definition)
         definition
@@ -90,7 +85,6 @@ module Attributes =
 
     [<RequireQualifiedAccess>]
     type AttributeDiff =
-        | NeedsChildrenComparison of struct (Attribute * Attribute)
         | Different of struct (Attribute * Attribute * obj option)
         | Added of Attribute
         | Removed of Attribute
@@ -100,6 +94,7 @@ module Attributes =
 /// Base logical element
 type IWidget =
     abstract CreateView : unit -> obj
+    abstract Attributes : Attribute []
 
 module ControlWidget =
     type IControlWidget =
@@ -107,20 +102,16 @@ module ControlWidget =
         abstract Add : Attribute -> IControlWidget
 
     type Handler =
-        {
-            TargetType: Type
-            Create: Attribute [] -> obj
-        }
+        { TargetType: Type
+          Create: Attribute [] -> obj }
 
     let private _handlers = Dictionary<Type, Handler>()
 
     let registerWithCustomCtor<'Builder, 'T> (create: Attribute [] -> 'T) =
         if not (_handlers.ContainsKey(typeof<'Builder>)) then
             _handlers.[typeof<'Builder>] <-
-                {
-                    TargetType = typeof<'T>
-                    Create = create >> box
-                }
+                { TargetType = typeof<'T>
+                  Create = create >> box }
 
     let register<'Builder, 'T when 'T: (new : unit -> 'T)> () =
         registerWithCustomCtor<'Builder, 'T> (fun _ -> new 'T())
@@ -129,7 +120,8 @@ module ControlWidget =
     let inline addAttribute (fn: Attribute [] -> #IControlWidget) (attribs: Attribute []) (attr: Attribute) =
         let attribs2 = Array.zeroCreate (attribs.Length + 1)
         Array.blit attribs 0 attribs2 0 attribs.Length
-        attribs2.[attribs.Length + 1] <- attr
+//        printfn "%A %A" attribs2.Length attribs.Length
+        attribs2.[attribs.Length] <- attr
         (fn attribs2) :> IControlWidget
 
     [<Extension>]
@@ -154,19 +146,45 @@ type IStatefulWidget<'arg, 'model, 'msg, 'view when 'view :> IWidget> =
 
 //-----Update sketch------
 module Reconciler =
-    type UpdateResult =
-        | Done
-        | UpdateNext of (struct (obj * IWidget)) list // control + IWidget for the control
+    type IViewNode =
+        // is this needed?
+        // maybe have something like WidgetType and Attributes separately?
+        abstract member Widget : IWidget
+        abstract member ApplyDiff : (IWidget * Attributes.AttributeDiff list) -> UpdateResult
 
-    let update control (widget: IWidget) = ()
-    // 1. compare attributes for control and widget
-    // 2. apply diff (should be a method on control). e.g control.ApplyDiff(diff)
-    // 3. apply returns UpdateResult
-    // 4. if we have 'Done' then exit
-    // 5. if we have 'UpdateNext' go through the list and recursively call update on each element
-    
-    // Questions
-    // 1. should adding/removing children should be done here as well?
-    // 2. Should 'mounting' views done by core framework or should be part of MAUI? I think the latter is fine
-    // 3. Should widgets have 1st class parent -> child relationships like in react?
-    // Meaning that we can fully control creations of new controls via core
+    and UpdateResult =
+        | Done
+        | UpdateNext of (struct (IViewNode * IWidget)) list // this is the way to update it's children
+
+
+    let rec update (node: IViewNode) (widget: IWidget) =
+        // is it better to have a Kind prop instead
+        // basically we care if it is exactly the same widget type as it was before
+        if widget.GetType() <> node.Widget.GetType() then
+            failwith "type mismatch!"
+
+        let diff =
+            Attributes.compareAttributes node.Widget.Attributes widget.Attributes
+
+        if List.isEmpty diff then
+            ()
+        else
+            match node.ApplyDiff(widget, diff) with
+            | Done -> ()
+            | UpdateNext updateRequests ->
+                for struct (node, widget) in updateRequests do
+                    update node widget
+
+
+
+// 1. compare attributes for control and widget
+// 2. apply diff (should be a method on control). e.g control.ApplyDiff(diff)
+// 3. apply returns UpdateResult
+// 4. if we have 'Done' then exit
+// 5. if we have 'UpdateNext' go through the list and recursively call update on each element
+
+// Questions
+// 1. should adding/removing children should be done here as well?
+// 2. Should 'mounting' views done by core framework or should be part of MAUI? I think the latter is fine
+// 3. Should widgets have 1st class parent -> child relationships like in react?
+// Meaning that we can fully control creations of new controls via core
