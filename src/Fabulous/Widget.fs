@@ -28,16 +28,20 @@ module Attributes =
     type AttributeComparer<'modelType> = 'modelType -> 'modelType -> AttributeComparison
 
     type AttributeDefinition<'inputType, 'modelType> =
-        { Key: AttributeKey
-          Name: string
-          DefaultValue: 'modelType
-          Convert: 'inputType -> 'modelType
-          Compare: AttributeComparer<'modelType> }
+        {
+            Key: AttributeKey
+            Name: string
+            DefaultValue: 'modelType
+            Convert: 'inputType -> 'modelType
+            Compare: AttributeComparer<'modelType>
+        }
         interface IAttributeDefinition
 
         member x.WithValue(value) =
-            { Key = x.Key
-              Value = x.Convert(value) }
+            {
+                Key = x.Key
+                Value = x.Convert(value)
+            }
 
         member x.Get(attributes: Attribute []) =
             let attr =
@@ -61,11 +65,13 @@ module Attributes =
         let key = AttributeKey(_attributes.Count + 1)
 
         let definition =
-            { Key = key
-              Convert = convert
-              Name = name
-              DefaultValue = defaultValue
-              Compare = compare }
+            {
+                Key = key
+                Convert = convert
+                Name = name
+                DefaultValue = defaultValue
+                Compare = compare
+            }
 
         _attributes.Add(key, definition)
         definition
@@ -89,12 +95,24 @@ module Attributes =
         | Added of Attribute
         | Removed of Attribute
 
-    let compareAttributes (prev: Attribute []) (next: Attribute []) : AttributeDiff list = []
+    let compareAttributes (prev: Attribute []) (next: Attribute []) : AttributeDiff list =
+        [AttributeDiff.Added next.[0]]
+
 
 /// Base logical element
 type IWidget =
-    abstract CreateView : unit -> obj
+    abstract CreateView : unit -> IViewNode
     abstract Attributes : Attribute []
+
+and IViewNode =
+    // is this needed?
+    // maybe have something like WidgetType and Attributes separately?
+    abstract member Widget : IWidget
+    abstract member ApplyDiff : (Attributes.AttributeDiff list * Attribute []) -> UpdateResult
+
+and [<RequireQualifiedAccess>] UpdateResult =
+    | Done
+    | UpdateNext of (struct (IViewNode * Attribute [])) list // this is the way to update it's children
 
 module ControlWidget =
     type IControlWidget =
@@ -102,16 +120,20 @@ module ControlWidget =
         abstract Add : Attribute -> IControlWidget
 
     type Handler =
-        { TargetType: Type
-          Create: Attribute [] -> obj }
+        {
+            TargetType: Type
+            Create: Attribute [] -> obj
+        }
 
     let private _handlers = Dictionary<Type, Handler>()
 
     let registerWithCustomCtor<'Builder, 'T> (create: Attribute [] -> 'T) =
         if not (_handlers.ContainsKey(typeof<'Builder>)) then
             _handlers.[typeof<'Builder>] <-
-                { TargetType = typeof<'T>
-                  Create = create >> box }
+                {
+                    TargetType = typeof<'T>
+                    Create = create >> box
+                }
 
     let register<'Builder, 'T when 'T: (new : unit -> 'T)> () =
         registerWithCustomCtor<'Builder, 'T> (fun _ -> new 'T())
@@ -120,7 +142,7 @@ module ControlWidget =
     let inline addAttribute (fn: Attribute [] -> #IControlWidget) (attribs: Attribute []) (attr: Attribute) =
         let attribs2 = Array.zeroCreate (attribs.Length + 1)
         Array.blit attribs 0 attribs2 0 attribs.Length
-//        printfn "%A %A" attribs2.Length attribs.Length
+        //        printfn "%A %A" attribs2.Length attribs.Length
         attribs2.[attribs.Length] <- attr
         (fn attribs2) :> IControlWidget
 
@@ -141,39 +163,23 @@ type IStatefulWidget<'arg, 'model, 'msg, 'view when 'view :> IWidget> =
     abstract State : RunnerKey option
     abstract Init : 'arg -> 'model
     abstract Update : 'msg * 'model -> 'model
-    abstract View : 'model * Attribute [] -> 'view
+    abstract View : 'model -> 'view
 
 
 //-----Update sketch------
 module Reconciler =
-    type IViewNode =
-        // is this needed?
-        // maybe have something like WidgetType and Attributes separately?
-        abstract member Widget : IWidget
-        abstract member ApplyDiff : (IWidget * Attributes.AttributeDiff list) -> UpdateResult
-
-    and UpdateResult =
-        | Done
-        | UpdateNext of (struct (IViewNode * IWidget)) list // this is the way to update it's children
-
-
-    let rec update (node: IViewNode) (widget: IWidget) =
-        // is it better to have a Kind prop instead
-        // basically we care if it is exactly the same widget type as it was before
-        if widget.GetType() <> node.Widget.GetType() then
-            failwith "type mismatch!"
-
+    let rec update (node: IViewNode) (attributes: Attribute[]) =
         let diff =
-            Attributes.compareAttributes node.Widget.Attributes widget.Attributes
+            Attributes.compareAttributes node.Widget.Attributes attributes
 
         if List.isEmpty diff then
             ()
         else
-            match node.ApplyDiff(widget, diff) with
-            | Done -> ()
-            | UpdateNext updateRequests ->
-                for struct (node, widget) in updateRequests do
-                    update node widget
+            match node.ApplyDiff(diff, attributes) with
+            | UpdateResult.Done -> ()
+            | UpdateResult.UpdateNext updateRequests ->
+                for struct (node, attrs) in updateRequests do
+                    update node attrs
 
 
 

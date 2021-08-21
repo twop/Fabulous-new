@@ -9,18 +9,37 @@ open TestUI
 
 //System.Diagnostics.Process.GetCurrentProcess().MainModule.FileName
 
-[<Test>]
-let SketchAPI () =
-    let labelWidget = Label("hi").textColor ("green")
 
-    let viewNode =
-        (labelWidget :> IWidget).CreateView() :?> TestLabel
+module SimpleProgram =
+    type Msg =
+        | SetText of string
+        | SetColor of string
 
-    let update = Label("yo").textColor ("red")
+    type Model = { text: string; color: string }
 
-    (viewNode :> IViewNode)
-        .ApplyDiff(update :> IWidget, [])
-    |> ignore
+    let update msg model =
+        match msg with
+        | SetText text -> { model with text = text }
+        | SetColor color -> { model with color = color }
 
-    Assert.AreEqual(viewNode.Color, "red")
-    Assert.AreEqual(viewNode.Text, "yo")
+    let view model =
+        Label(model.text).textColor(model.color)
+
+    let init () = { text = "hi"; color = "red" }
+
+    [<Test>]
+    let SketchAPI () =
+        let program =
+            StatefulWidget.mkSimpleView init update view
+
+        let instance = Run.Instance program
+
+        let viewNode = (instance.Start()) :?> TestLabel
+
+        Assert.AreEqual(viewNode.Text, "hi")
+        instance.ProcessMessage(SetText "yo")
+        Assert.AreEqual(viewNode.Text, "yo")
+
+        Assert.AreEqual(viewNode.Color, "red")
+        instance.ProcessMessage(SetColor "blue")
+        Assert.AreEqual(viewNode.Color, "blue")

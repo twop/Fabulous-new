@@ -14,7 +14,7 @@ type Runner<'arg, 'model, 'msg, 'view when 'view :> IWidget>
         let model = widget.Init(arg)
         States.setState key model
 
-    member x.processMsg(msg) =
+    member x.ProcessMsg(msg) =
         let model = unbox (States.getState key)
         let newModel = widget.Update(msg, model)
         States.setState key newModel
