@@ -43,14 +43,26 @@ module Attributes =
                 Value = x.Convert(value)
             }
 
-        member x.Get(attributes: Attribute []) =
+        member x.TryGet(attributes: Attribute []) =
             let attr =
                 attributes
                 |> Array.tryFind (fun attr -> attr.Key = x.Key)
 
             match attr with
-            | Some attr -> unbox<'modelType> attr.Value
-            | None -> x.DefaultValue
+            | Some attr -> Some (unbox<'modelType> attr.Value)
+            | None -> None
+            
+        member x.Get(attributes: Attribute []) =
+            x.TryGet attributes |> Option.defaultValue x.DefaultValue
+            
+//            let attr =
+//                attributes
+//                |> Array.tryFind (fun attr -> attr.Key = x.Key)
+//
+//            match attr with
+//            | Some attr -> unbox<'modelType> attr.Value
+//            | None -> x.DefaultValue
+        
 
     let private _attributes =
         Dictionary<AttributeKey, IAttributeDefinition>()
