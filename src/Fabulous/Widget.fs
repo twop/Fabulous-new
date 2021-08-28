@@ -4,6 +4,7 @@ namespace Fabulous
 open System
 open System.Collections.Generic
 open System.Runtime.CompilerServices
+open Fabulous
 
 [<Struct>]
 type RunnerKey = RunnerKey of int
@@ -46,23 +47,24 @@ module Attributes =
         member x.TryGet(attributes: Attribute []) =
             let attr =
                 attributes
-                |> Array.tryFind (fun attr -> attr.Key = x.Key)
+                |> Array.tryFind(fun attr -> attr.Key = x.Key)
 
             match attr with
-            | Some attr -> Some (unbox<'modelType> attr.Value)
+            | Some attr -> Some(unbox<'modelType> attr.Value)
             | None -> None
-            
+
         member x.Get(attributes: Attribute []) =
-            x.TryGet attributes |> Option.defaultValue x.DefaultValue
-            
-//            let attr =
+            x.TryGet attributes
+            |> Option.defaultValue x.DefaultValue
+
+    //            let attr =
 //                attributes
 //                |> Array.tryFind (fun attr -> attr.Key = x.Key)
 //
 //            match attr with
 //            | Some attr -> unbox<'modelType> attr.Value
 //            | None -> x.DefaultValue
-        
+
 
     let private _attributes =
         Dictionary<AttributeKey, IAttributeDefinition>()
@@ -108,7 +110,8 @@ module Attributes =
         | Removed of Attribute
 
     let compareAttributes (prev: Attribute []) (next: Attribute []) : AttributeDiff list =
-        [AttributeDiff.Added next.[0]]
+        [ AttributeDiff.Added next.[0] ]
+
 
 
 /// Base logical element
@@ -126,6 +129,9 @@ and [<RequireQualifiedAccess>] UpdateResult =
     | Done
     | UpdateNext of (struct (IViewNode * Attribute [])) list // this is the way to update it's children
 
+
+
+
 module ControlWidget =
     type IControlWidget =
         inherit IWidget
@@ -140,7 +146,7 @@ module ControlWidget =
     let private _handlers = Dictionary<Type, Handler>()
 
     let registerWithCustomCtor<'Builder, 'T> (create: Attribute [] -> 'T) =
-        if not (_handlers.ContainsKey(typeof<'Builder>)) then
+        if not(_handlers.ContainsKey(typeof<'Builder>)) then
             _handlers.[typeof<'Builder>] <-
                 {
                     TargetType = typeof<'T>
@@ -148,11 +154,11 @@ module ControlWidget =
                 }
 
     let register<'Builder, 'T when 'T: (new : unit -> 'T)> () =
-        registerWithCustomCtor<'Builder, 'T> (fun _ -> new 'T())
+        registerWithCustomCtor<'Builder, 'T>(fun _ -> new 'T())
 
 
     let inline addAttribute (fn: Attribute [] -> #IControlWidget) (attribs: Attribute []) (attr: Attribute) =
-        let attribs2 = Array.zeroCreate (attribs.Length + 1)
+        let attribs2 = Array.zeroCreate(attribs.Length + 1)
         Array.blit attribs 0 attribs2 0 attribs.Length
         //        printfn "%A %A" attribs2.Length attribs.Length
         attribs2.[attribs.Length] <- attr
@@ -180,7 +186,10 @@ type IStatefulWidget<'arg, 'model, 'msg, 'view when 'view :> IWidget> =
 
 //-----Update sketch------
 module Reconciler =
-    let rec update (node: IViewNode) (attributes: Attribute[]) =
+
+    let compareChildren (prev: IWidget []) (next: IWidget []) = ()
+
+    let rec update (node: IViewNode) (attributes: Attribute []) =
         let diff =
             Attributes.compareAttributes node.Widget.Attributes attributes
 
@@ -192,6 +201,7 @@ module Reconciler =
             | UpdateResult.UpdateNext updateRequests ->
                 for struct (node, attrs) in updateRequests do
                     update node attrs
+
 
 
 

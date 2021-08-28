@@ -11,6 +11,13 @@ module A =
     module TextStyle =
         let TextColor = Attributes.define<string> "TextColor" ""
 
+    module Container =
+        let Children =
+            Attributes.createDefinitionWithConverter<seq<IWidget>, IWidget []>
+                "Children"
+                [||]
+                Seq.toArray
+                (fun a b -> Attributes.AttributeComparison.NotSure)
 
     module Button =
         let Clicked =
@@ -118,12 +125,53 @@ type ButtonWidgetExtensions() =
     static member inline automationId(this: ButtonWidget, value: string) =
         this.AddAttribute(A.Automation.AutomationId.WithValue(value))
 
-///----------------
+///----Stack----
+type TestStack(attributes: Attribute [], widget) =
+    let mutable attributes: Attribute [] = attributes
+    let mutable children: IViewNode [] = [||]
+    
+    member val Children: IViewNode[] = children
 
+    interface IViewNode with
+        member this.ApplyDiff((diffs, attrs)) =
+            //            printfn "new attrs: %A" attrs
+            attributes <- attrs
+            UpdateResult.Done
+
+        member this.Widget = widget
+
+
+[<Struct>]
+type StackLayoutWidget(attributes: Attribute []) =
+    static member inline Create(children: seq<#IWidget>) =
+        StackLayoutWidget(
+            [|
+                // TODO what is the right type conversion here? Is there one needed at all?
+                A.Container.Children.WithValue(children |> Seq.map(fun c -> c :> IWidget))
+            |]
+        )
+
+    interface IControlWidget with
+        member this.Attributes = attributes
+
+        member this.Add(attribute) =
+            addAttribute StackLayoutWidget attributes attribute
+
+        member this.CreateView() =
+            TestStack(attributes, this) :> IViewNode
+
+[<Extension>]
+type StackLayoutWidgetExtensions() =
+    [<Extension>]
+    static member inline automationId(this: StackLayoutWidget, value: string) =
+        this.AddAttribute(A.Automation.AutomationId.WithValue(value))
+
+///----------------
 [<AbstractClass; Sealed>]
 type View private () =
     static member inline Label(text) = LabelWidget.Create(text)
     static member inline Button(text, msg) = ButtonWidget.Create(text, msg)
+    static member inline Stack(children) = StackLayoutWidget.Create(children)
 
 ///------------------
 type StatefulView<'arg, 'model, 'msg, 'view when 'view :> IWidget> =
