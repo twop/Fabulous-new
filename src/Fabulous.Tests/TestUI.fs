@@ -28,8 +28,7 @@ module A =
         let AutomationId =
             Attributes.define<string> "AutomationId" ""
 
-type TestLabel(attributes, widget) =
-    let widget = widget
+type TestLabel(attributes, source) =
     let mutable attributes: Attribute [] = attributes
 
     member x.Color = A.TextStyle.TextColor.Get attributes
@@ -41,7 +40,8 @@ type TestLabel(attributes, widget) =
             attributes <- attrs
             UpdateResult.Done
 
-        member this.Widget = widget
+        member this.Source = source
+        member this.Attributes = attributes
 
 [<Struct>]
 type LabelWidget(attributes: Attribute []) =
@@ -57,7 +57,7 @@ type LabelWidget(attributes: Attribute []) =
             addAttribute LabelWidget attributes attribute
 
         member this.CreateView() =
-            TestLabel(attributes, this) :> IViewNode
+            TestLabel(attributes, typeof<LabelWidget>) :> IViewNode
 
 [<Extension>]
 type LabelWidgetExtensions() =
@@ -76,8 +76,7 @@ type LabelWidgetExtensions() =
 type IPressable =
     abstract Press : unit -> unit
 
-type TestButton(attributes, widget) =
-    let widget = widget
+type TestButton(attributes, source) =
     let mutable attributes: Attribute [] = attributes
     member x.Text = A.Text.Text.Get attributes
     //    member x.ClickMsg = A.Button.Clicked.Get attributes
@@ -96,7 +95,8 @@ type TestButton(attributes, widget) =
             attributes <- attrs
             UpdateResult.Done
 
-        member this.Widget = widget
+        member this.Source = source
+        member this.Attributes = attributes
 
 [<Struct>]
 type ButtonWidget(attributes: Attribute []) =
@@ -108,7 +108,7 @@ type ButtonWidget(attributes: Attribute []) =
             addAttribute ButtonWidget attributes attribute
 
         member this.CreateView() =
-            TestButton(attributes, this) :> IViewNode
+            TestButton(attributes, typeof<ButtonWidget>) :> IViewNode
 
     static member inline Create(text: string, clicked: (#obj)) =
         ButtonWidget [| A.Text.Text.WithValue(text)
@@ -126,19 +126,32 @@ type ButtonWidgetExtensions() =
         this.AddAttribute(A.Automation.AutomationId.WithValue(value))
 
 ///----Stack----
-type TestStack(attributes: Attribute [], widget) =
-    let mutable attributes: Attribute [] = attributes
-    let mutable children: IViewNode [] = [||]
-    
-    member val Children: IViewNode[] = children
+type TestStack(attrs: Attribute [], source) =
+    let mutable attributes: Attribute [] = attrs
 
+    let mutable children: IViewNode [] =
+        A.Container.Children.Get attrs
+        |> Array.map(fun w -> w.CreateView())
+
+    interface IViewContainer with
+        member this.Children = children
+        member this.SetNewChildren(upd) = children <- upd.Children
+        
+        
     interface IViewNode with
         member this.ApplyDiff((diffs, attrs)) =
             //            printfn "new attrs: %A" attrs
             attributes <- attrs
-            UpdateResult.Done
+            
+            
+            let childrenWidgets = A.Container.Children.Get attrs
+            
+            UpdateResult.UpdateChildren struct (this :> IViewContainer, childrenWidgets)
 
-        member this.Widget = widget
+        member this.Source = source
+        member this.Attributes = attributes
+
+
 
 
 [<Struct>]
@@ -158,7 +171,7 @@ type StackLayoutWidget(attributes: Attribute []) =
             addAttribute StackLayoutWidget attributes attribute
 
         member this.CreateView() =
-            TestStack(attributes, this) :> IViewNode
+            TestStack(attributes, typeof<StackLayoutWidget>) :> IViewNode
 
 [<Extension>]
 type StackLayoutWidgetExtensions() =
@@ -200,14 +213,20 @@ module StatefulWidget =
 
 module Run =
 
-    let traverse (viewNode: IViewNode) test =
+    let rec traverse (viewNode: IViewNode) test =
+        let inline testToOption node = if test node then Some node else None
+
+        // TODO refactor using only containers as special cases
         match viewNode with
         | :? TestButton
-        | :? TestLabel ->
-            if test viewNode then
-                Some viewNode
-            else
-                None
+        | :? TestLabel -> testToOption viewNode
+        | :? TestStack as stack ->
+            let children = (stack :> IViewContainer).Children
+            
+            let initial = testToOption viewNode
+            
+            children
+            |> Array.fold(fun res child -> res |> Option.orElse(testToOption child)) initial 
         | _ -> None
 
     type ViewTree =
@@ -233,7 +252,7 @@ module Run =
                 // TODO support mount + unmount
                 // TODO possibly introduce some notion of a platform/runtime context
                 // that can mount and unmount nodes
-                if newWidget.GetType() <> viewNode.Widget.GetType() then
+                if newWidget.GetType() <> viewNode.Source then
                     failwith "type mismatch!"
 
                 state <- Some(newModel, viewNode)
@@ -262,7 +281,7 @@ module Run =
                             view
                             (fun node ->
                                 let maybeId =
-                                    A.Automation.AutomationId.TryGet node.Widget.Attributes
+                                    A.Automation.AutomationId.TryGet node.Attributes
 
                                 match maybeId with
                                 | Some automationId -> automationId = id

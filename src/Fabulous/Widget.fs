@@ -4,7 +4,6 @@ namespace Fabulous
 open System
 open System.Collections.Generic
 open System.Runtime.CompilerServices
-open Fabulous
 
 [<Struct>]
 type RunnerKey = RunnerKey of int
@@ -122,14 +121,25 @@ type IWidget =
 and IViewNode =
     // is this needed?
     // maybe have something like WidgetType and Attributes separately?
-    abstract member Widget : IWidget
-    abstract member ApplyDiff : (Attributes.AttributeDiff list * Attribute []) -> UpdateResult
+    abstract Attributes : Attribute []
+    abstract Source : Type
+    abstract ApplyDiff : (Attributes.AttributeDiff list * Attribute []) -> UpdateResult
 
-and [<RequireQualifiedAccess>] UpdateResult =
+and [<Struct>] ChildrenUpdate =
+    {
+        Children: IViewNode []
+        Added: IViewNode list option
+        Removed: IViewNode list option
+    }
+
+// TODO should it be IList? or a simpler custom interface will do?
+and IViewContainer =
+    abstract Children : IViewNode []
+    abstract SetNewChildren : ChildrenUpdate -> unit
+
+and [<RequireQualifiedAccess; Struct>] UpdateResult =
     | Done
-    | UpdateNext of (struct (IViewNode * Attribute [])) list // this is the way to update it's children
-
-
+    | UpdateChildren of struct (IViewContainer * IWidget [])
 
 
 module ControlWidget =
@@ -187,21 +197,104 @@ type IStatefulWidget<'arg, 'model, 'msg, 'view when 'view :> IWidget> =
 //-----Update sketch------
 module Reconciler =
 
-    let compareChildren (prev: IWidget []) (next: IWidget []) = ()
+    // https://medium.com/@deathmood/how-to-write-your-own-virtual-dom-ee74acc13060
+//    function updateElement($parent, newNode, oldNode, index = 0) {
+//  if (!oldNode) {
+//    $parent.appendChild(
+//      createElement(newNode)
+//    );
+//  } else if (!newNode) {
+//    $parent.removeChild(
+//      $parent.childNodes[index]
+//    );
+//  } else if (changed(newNode, oldNode)) {
+//    $parent.replaceChild(
+//      createElement(newNode),
+//      $parent.childNodes[index]
+//    );
+//  } else if (newNode.type) {
+//    const newLength = newNode.children.length;
+//    const oldLength = oldNode.children.length;
+//    for (let i = 0; i < newLength || i < oldLength; i++) {
+//      updateElement(
+//        $parent.childNodes[index],
+//        newNode.children[i],
+//        oldNode.children[i],
+//        i
+//      );
+//    }
+//  }
+//}
 
-    let rec update (node: IViewNode) (attributes: Attribute []) =
+    let inline private addItem item maybeList =
+        match maybeList with
+        | Some l -> Some(item :: l)
+        | None -> Some [ item ]
+
+    //    let private isSame
+    let rec update (node: IViewNode) (attributes: Attribute []) : unit =
         let diff =
-            Attributes.compareAttributes node.Widget.Attributes attributes
+            Attributes.compareAttributes node.Attributes attributes
 
         if List.isEmpty diff then
             ()
         else
             match node.ApplyDiff(diff, attributes) with
             | UpdateResult.Done -> ()
-            | UpdateResult.UpdateNext updateRequests ->
-                for struct (node, attrs) in updateRequests do
-                    update node attrs
+            | UpdateResult.UpdateChildren struct (container, widgets) ->
+                let children = container.Children
 
+                // if the size is the same we can just reuse the same array to avoid allocations
+                // it is safe to do so because diffing goes only forward, thus safe to do it in place
+                let target =
+                    if widgets.Length = children.Length then
+                        children
+                    else
+                        Array.zeroCreate(widgets.Length)
+
+                let mutable added = None
+
+                let mutable removed =
+                    // if we are downsizing then the tail needs to be added to removed
+                    if children.Length > widgets.Length then
+                        children
+                        |> Array.skip widgets.Length
+                        |> Array.toList
+                        |> Some
+                    else
+                        None
+
+                for i = 0 to widgets.Length - 1 do
+                    let widget = widgets.[i]
+                    let prev = Array.tryItem i children
+
+                    match (prev, widget) with
+                    | None, widget ->
+                        // view doesn't exist yet
+                        let view = widget.CreateView()
+                        target.[i] <- view
+                        added <- addItem view added
+
+                    | Some p, widget when widget.GetType() = p.Source ->
+                        // same type, just update
+                        target.[i] <- p
+                        update p widget.Attributes
+
+                    | Some p, widget ->
+                        // different type, thus replacement is needed
+                        let view = widget.CreateView()
+                        target.[i] <- view
+                        added <- addItem view added
+                        removed <- addItem p removed
+
+                container.SetNewChildren
+                    {
+                        Children = target
+                        Added = added
+                        Removed = removed
+                    }
+
+                ()
 
 
 

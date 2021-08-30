@@ -129,7 +129,7 @@ module SimpleStackTests =
 
         let tree = (instance.Start())
 
-        let stack = find<TestStack> tree "stack"
+        let stack = find<TestStack> tree "stack" :> IViewContainer
         Assert.AreEqual(stack.Children.Length, 0)
         
         // add first
