@@ -17,12 +17,12 @@ module A =
                 "Children"
                 [||]
                 Seq.toArray
-                (fun a b -> Attributes.AttributeComparison.NotSure)
+                (fun a b -> Attributes.AttributeComparison.Different None)
 
     module Button =
         let Clicked =
             // TODO what is the proper way to represent that?
-            Attributes.createDefinition<obj option>(fun a b -> Attributes.AttributeComparison.NotSure) "_Clicked" None // TODO fix option
+            Attributes.createDefinition<obj option>(fun a b -> Attributes.AttributeComparison.Different None) "_Clicked" None // TODO fix option
 
     module Automation =
         let AutomationId =
@@ -135,17 +135,13 @@ type TestStack(attrs: Attribute [], source) =
 
     interface IViewContainer with
         member this.Children = children
-        member this.SetNewChildren(upd) = children <- upd.Children
+        member this.UpdateChildren(upd) = children <- upd.Children
         
         
     interface IViewNode with
         member this.ApplyDiff((diffs, attrs)) =
-            //            printfn "new attrs: %A" attrs
             attributes <- attrs
-            
-            
             let childrenWidgets = A.Container.Children.Get attrs
-            
             UpdateResult.UpdateChildren struct (this :> IViewContainer, childrenWidgets)
 
         member this.Source = source

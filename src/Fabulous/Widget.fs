@@ -11,19 +11,25 @@ type RunnerKey = RunnerKey of int
 [<Struct>]
 type AttributeKey = AttributeKey of int
 
-type Attribute = { Key: AttributeKey; Value: obj }
+[<Struct>]
+type Attribute = {
+    Key: AttributeKey
+    Value: obj
+    #if DEBUG
+    Name: string
+    #endif
+}
 
 module Attributes =
-    type IAttributeDefinition =
-        interface
-        end
-
     [<Struct>]
     [<RequireQualifiedAccess>]
     type AttributeComparison =
         | Same
-        | NotSure
         | Different of data: obj option
+        
+    type IAttributeDefinition =
+        abstract CompareBoxed: obj * obj -> AttributeComparison
+
 
     type AttributeComparer<'modelType> = 'modelType -> 'modelType -> AttributeComparison
 
@@ -35,12 +41,16 @@ module Attributes =
             Convert: 'inputType -> 'modelType
             Compare: AttributeComparer<'modelType>
         }
-        interface IAttributeDefinition
+        interface IAttributeDefinition with
+            member this.CompareBoxed(a, b) = this.Compare (unbox<'modelType>a) (unbox<'modelType>b) 
 
-        member x.WithValue(value) =
+        member x.WithValue(value): Attribute =
             {
                 Key = x.Key
                 Value = x.Convert(value)
+                #if DEBUG
+                Name = x.Name
+                #endif
             }
 
         member x.TryGet(attributes: Attribute []) =
@@ -56,13 +66,6 @@ module Attributes =
             x.TryGet attributes
             |> Option.defaultValue x.DefaultValue
 
-    //            let attr =
-//                attributes
-//                |> Array.tryFind (fun attr -> attr.Key = x.Key)
-//
-//            match attr with
-//            | Some attr -> unbox<'modelType> attr.Value
-//            | None -> x.DefaultValue
 
 
     let private _attributes =
@@ -101,6 +104,21 @@ module Attributes =
                     (AttributeComparison.Different None))
             name
             defaultValue
+            
+    /// This is insertion sort that is O(n*n) but it performs better
+    /// 1. if the array is partially sorted (second sort is cheap)
+    /// 2. there are few elements, we expect to have only a handful of them per widget
+    /// 3. stable, which is handy for duplicate attributes, e.g. we can choose which one to pick
+    /// https://en.wikipedia.org/wiki/Insertion_sort
+    let inline private sortAttributesInPlace (attrs: Attribute[]): Attribute [] =
+        let N = attrs.GetLength(0)
+        for i in [1..N-1] do
+            for j = i downto 1 do
+                if attrs.[j].Key < attrs.[j - 1].Key then
+                    let temp = attrs.[j]
+                    attrs.[j] <- attrs.[j - 1]
+                    attrs.[j - 1] <- temp
+        attrs
 
     [<RequireQualifiedAccess>]
     type AttributeDiff =
@@ -108,9 +126,87 @@ module Attributes =
         | Added of Attribute
         | Removed of Attribute
 
+    /// Let's imagine that we have the following situation
+    /// prev = [|1,2,6,7|] note that it is sorted
+    /// next = [|8,5,6,2|] unsorted
+    /// In reality we have Key and Value, but let's pretend that we only care about keys for now 
+    ///
+    /// then the desired outcome is this
+    /// added = [5, 8]
+    /// removed = [1, 7]
+    ///
+    /// Approach
+    /// 1. we sort both arrays
+    /// prev = [|1,2,6,7|] 
+    /// next = [|2,5,6,8|]
+    ///
+    /// 2. Starting from index 0 for both of the arrays
+    ///     if prevItem < nextItem then
+    ///         inc prevIndex, add prevItem to removed, goto 2
+    ///     if prevItem > nextItem 
+    ///         inc nextIndex, add nextItem to added, goto 2
+    ///     else (meaning equals)
+    ///         compare values
+    ///
+    /// break when we reached both ends of the arrays
     let compareAttributes (prev: Attribute []) (next: Attribute []) : AttributeDiff list =
-        [ AttributeDiff.Added next.[0] ]
+        // the order of attributes doesn't matter, thus it is safe to mutate array in place
+        prev |> sortAttributesInPlace |> ignore
+        next |> sortAttributesInPlace |> ignore
 
+        let mutable result: AttributeDiff list = []
+        
+        let mutable prevIndex = 0
+        let mutable nextIndex = 0
+        
+        let prevLength = prev.Length
+        let nextLength = next.Length
+        
+        while not (prevIndex >= prevLength && nextIndex >= nextLength) 
+            do
+                if prevIndex = prevLength then
+                    // that means we are done with the prev and only need to add next's tail to added
+                    result <- AttributeDiff.Added next.[nextIndex] :: result
+                    nextIndex <- nextIndex + 1
+                    
+                elif nextIndex = nextLength then
+                    // that means that we are done with new items and only need prev's tail to removed
+                    result <- AttributeDiff.Removed prev.[prevIndex] :: result
+                    prevIndex <- prevIndex + 1
+                    
+                else
+                    // we haven't reached either of the ends 
+                    let prevItem = prev.[prevIndex]
+                    let nextItem = next.[nextIndex]
+                    
+                    let (AttributeKey prevKey) = prevItem.Key
+                    let (AttributeKey nextKey) = nextItem.Key
+                    
+                    match prevKey.CompareTo nextKey with
+                    | c when c < 0 ->
+                        // prev key is less than next -> remove prev key
+                        result <- AttributeDiff.Removed prevItem :: result
+                        prevIndex <- prevIndex + 1
+                        
+                    | c when c > 0 ->
+                        // prev key is more than next -> add next item
+                        result <- AttributeDiff.Added nextItem :: result
+                        nextIndex <- nextIndex + 1
+                        
+                    | _ ->
+                        // means that we are targeting the same attribute
+                        
+                        // move both pointers
+                        prevIndex <- prevIndex + 1
+                        nextIndex <- nextIndex + 1
+                    
+                        let attribute = _attributes.[prevItem.Key]
+                        match attribute.CompareBoxed (prevItem.Value, nextItem.Value) with
+                        | AttributeComparison.Same -> ()
+                        | AttributeComparison.Different diff ->
+                            result <- AttributeDiff.Different (prevItem, nextItem, diff) :: result
+                        
+        result
 
 
 /// Base logical element
@@ -135,7 +231,7 @@ and [<Struct>] ChildrenUpdate =
 // TODO should it be IList? or a simpler custom interface will do?
 and IViewContainer =
     abstract Children : IViewNode []
-    abstract SetNewChildren : ChildrenUpdate -> unit
+    abstract UpdateChildren : ChildrenUpdate -> unit
 
 and [<RequireQualifiedAccess; Struct>] UpdateResult =
     | Done
@@ -246,15 +342,15 @@ module Reconciler =
 
                 // if the size is the same we can just reuse the same array to avoid allocations
                 // it is safe to do so because diffing goes only forward, thus safe to do it in place
-                let target =
+                let target: IViewNode [] =
                     if widgets.Length = children.Length then
                         children
                     else
                         Array.zeroCreate(widgets.Length)
 
-                let mutable added = None
+                let mutable added: IViewNode list option = None
 
-                let mutable removed =
+                let mutable removed: IViewNode list option =
                     // if we are downsizing then the tail needs to be added to removed
                     if children.Length > widgets.Length then
                         children
@@ -287,7 +383,7 @@ module Reconciler =
                         added <- addItem view added
                         removed <- addItem p removed
 
-                container.SetNewChildren
+                container.UpdateChildren
                     {
                         Children = target
                         Added = added

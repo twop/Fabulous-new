@@ -156,3 +156,17 @@ module SimpleStackTests =
         Assert.AreEqual(label.Text, "just 1")
         
         
+module ReconcilerTests =
+    let a = Attributes.define<int> "A" 0
+    let b = Attributes.define<string> "B" ""
+    let c = Attributes.define<bool> "C" true
+    
+    [<Test>]
+    let CompareAttributes () =
+        let prev = [|a.WithValue(1); b.WithValue("yo")|]
+        let next = [|c.WithValue(false); b.WithValue("aha!")|]
+        
+        let res = Attributes.compareAttributes prev next
+        Assert.AreEqual([], res)
+        ()
+        
