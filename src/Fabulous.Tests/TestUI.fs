@@ -22,7 +22,10 @@ module A =
     module Button =
         let Clicked =
             // TODO what is the proper way to represent that?
-            Attributes.createDefinition<obj option>(fun a b -> Attributes.AttributeComparison.Different None) "_Clicked" None // TODO fix option
+            Attributes.createDefinition<obj option>
+                (fun a b -> Attributes.AttributeComparison.Different None)
+                "_Clicked"
+                None // TODO fix option
 
     module Automation =
         let AutomationId =
@@ -44,31 +47,30 @@ type TestLabel(attributes, source) =
         member this.Attributes = attributes
 
 [<Struct>]
-type LabelWidget(attributes: Attribute []) =
+type LabelWidget<'msg>(attributes: Attribute []) =
     //    static do register<LabelWidget, TestLabel> () // TODO?
 
-    static member inline Create(text: string) =
-        LabelWidget([| A.Text.Text.WithValue(text) |])
+    static member inline Create<'a>(text: string) =
+        LabelWidget<'a>([| A.Text.Text.WithValue(text) |])
+
+    interface IWidget with
+        member this.Attributes = attributes
+
+        member this.CreateView() =
+            TestLabel(attributes, typeof<LabelWidget<int>>) :> IViewNode
 
     interface IControlWidget with
-        member this.Attributes = attributes
 
         member this.Add(attribute) =
             addAttribute LabelWidget attributes attribute
 
-        member this.CreateView() =
-            TestLabel(attributes, typeof<LabelWidget>) :> IViewNode
+    interface ITypedWidget<'msg>
 
 [<Extension>]
 type LabelWidgetExtensions() =
     [<Extension>]
-    static member inline textColor(this: LabelWidget, value: string) =
+    static member inline textColor<'msg>(this: LabelWidget<'msg>, value: string) =
         this.AddAttribute(A.TextStyle.TextColor.WithValue(value))
-
-    [<Extension>]
-    static member inline automationId(this: LabelWidget, value: string) =
-        this.AddAttribute(A.Automation.AutomationId.WithValue(value))
-
 
 ///----------------
 
@@ -98,32 +100,36 @@ type TestButton(attributes, source) =
         member this.Source = source
         member this.Attributes = attributes
 
-[<Struct>]
-type ButtonWidget(attributes: Attribute []) =
 
-    interface IControlWidget with
+
+[<Struct>]
+type ButtonWidget<'msg>(attributes: Attribute []) =
+    interface IWidget with
         member this.Attributes = attributes
 
+        member this.CreateView() =
+            TestButton(attributes, typeof<ButtonWidget<int>>) :> IViewNode
+
+    interface IControlWidget with
         member this.Add(attribute) =
             addAttribute ButtonWidget attributes attribute
 
-        member this.CreateView() =
-            TestButton(attributes, typeof<ButtonWidget>) :> IViewNode
 
-    static member inline Create(text: string, clicked: (#obj)) =
-        ButtonWidget [| A.Text.Text.WithValue(text)
-                        A.Button.Clicked.WithValue(Some(box clicked)) |]
+    interface ITypedWidget<'msg>
+
+    static member inline Create<'msg>(text: string, clicked: 'msg) =
+        ButtonWidget<'msg>
+            [|
+                A.Text.Text.WithValue(text)
+                A.Button.Clicked.WithValue(Some(box clicked))
+            |]
 
 
 [<Extension>]
 type ButtonWidgetExtensions() =
     [<Extension>]
-    static member inline textColor(this: ButtonWidget, value: string) =
+    static member inline textColor<'msg>(this: ButtonWidget<'msg>, value: string) =
         this.AddAttribute(A.TextStyle.TextColor.WithValue(value))
-
-    [<Extension>]
-    static member inline automationId(this: ButtonWidget, value: string) =
-        this.AddAttribute(A.Automation.AutomationId.WithValue(value))
 
 ///----Stack----
 type TestStack(attrs: Attribute [], source) =
@@ -136,8 +142,8 @@ type TestStack(attrs: Attribute [], source) =
     interface IViewContainer with
         member this.Children = children
         member this.UpdateChildren(upd) = children <- upd.Children
-        
-        
+
+
     interface IViewNode with
         member this.ApplyDiff((diffs, attrs)) =
             attributes <- attrs
@@ -151,36 +157,48 @@ type TestStack(attrs: Attribute [], source) =
 
 
 [<Struct>]
-type StackLayoutWidget(attributes: Attribute []) =
-    static member inline Create(children: seq<#IWidget>) =
-        StackLayoutWidget(
+type StackLayoutWidget<'msg>(attributes: Attribute []) =
+    static member inline Create(children: #seq<ITypedWidget<'m>>) =
+        StackLayoutWidget<'m>(
             [|
                 // TODO what is the right type conversion here? Is there one needed at all?
                 A.Container.Children.WithValue(children |> Seq.map(fun c -> c :> IWidget))
             |]
         )
 
-    interface IControlWidget with
+
+    interface IWidget with
         member this.Attributes = attributes
 
+        member this.CreateView() =
+            TestStack(attributes, typeof<StackLayoutWidget<int>>) :> IViewNode
+
+
+    interface IControlWidget with
         member this.Add(attribute) =
             addAttribute StackLayoutWidget attributes attribute
 
-        member this.CreateView() =
-            TestStack(attributes, typeof<StackLayoutWidget>) :> IViewNode
+    interface ITypedWidget<'msg>
+
+
+//----------
 
 [<Extension>]
-type StackLayoutWidgetExtensions() =
+type SharedExtensions() =
     [<Extension>]
-    static member inline automationId(this: StackLayoutWidget, value: string) =
+    static member inline automationId(this: #IControlWidget, value: string) =
         this.AddAttribute(A.Automation.AutomationId.WithValue(value))
 
+    [<Extension>]
+    static member inline cast<'msg>(this: ITypedWidget<'msg>) = this
+    
+    
 ///----------------
 [<AbstractClass; Sealed>]
 type View private () =
-    static member inline Label(text) = LabelWidget.Create(text)
-    static member inline Button(text, msg) = ButtonWidget.Create(text, msg)
-    static member inline Stack(children) = StackLayoutWidget.Create(children)
+    static member inline Label(text) = LabelWidget<_>.Create (text)
+    static member inline Button<'msg>(text, msg) = ButtonWidget<'msg>.Create (text, msg)
+    static member inline Stack(children) = StackLayoutWidget<_>.Create (children)
 
 ///------------------
 type StatefulView<'arg, 'model, 'msg, 'view when 'view :> IWidget> =
@@ -218,11 +236,11 @@ module Run =
         | :? TestLabel -> testToOption viewNode
         | :? TestStack as stack ->
             let children = (stack :> IViewContainer).Children
-            
+
             let initial = testToOption viewNode
-            
+
             children
-            |> Array.fold(fun res child -> res |> Option.orElse(testToOption child)) initial 
+            |> Array.fold(fun res child -> res |> Option.orElse(testToOption child)) initial
         | _ -> None
 
     type ViewTree =

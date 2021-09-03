@@ -56,9 +56,6 @@ module SimpleLabelTests =
         Assert.AreEqual(label.Color, "blue")
 
 
-
-
-
 module ButtonTests =
     type Msg = | Increment
 
@@ -68,9 +65,18 @@ module ButtonTests =
         match msg with
         | Increment -> { model with count = model.count + 1 }
 
+
     let view model =
-        Button(model.count.ToString(), Increment)
-            .automationId("btn")
+        Stack(
+            [
+                Button(model.count.ToString(), Increment)
+                    .automationId("btn")
+
+                Label("hey")
+
+            //                Button(model.count.ToString(), "should be an error")
+            ]
+        )
 
     let init () = { count = 0 }
 
@@ -113,9 +119,11 @@ module SimpleStackTests =
     let view model =
         let labels =
             model
-            |> List.map(fun (id, text) -> Label(text).automationId(id.ToString()))
+            |> List.map(fun (id, text) -> Label(text).automationId(id.ToString()).cast())
 
-        Stack(labels).automationId("stack")
+
+        Stack(Button("hey", AddNew(1, "a")).cast() :: labels)
+            .automationId("stack")
 
 
     let init () = []
@@ -129,44 +137,50 @@ module SimpleStackTests =
 
         let tree = (instance.Start())
 
-        let stack = find<TestStack> tree "stack" :> IViewContainer
+        let stack =
+            find<TestStack> tree "stack" :> IViewContainer
+
         Assert.AreEqual(stack.Children.Length, 0)
-        
+
         // add first
-        instance.ProcessMessage(AddNew (1, "yo"))
+        instance.ProcessMessage(AddNew(1, "yo"))
         Assert.AreEqual(stack.Children.Length, 1)
         let label = stack.Children.[0] :?> TestLabel
         Assert.AreEqual(label.Text, "yo")
-        
+
         // add second in front
-        instance.ProcessMessage(AddNew (2, "yo2"))
+        instance.ProcessMessage(AddNew(2, "yo2"))
         Assert.AreEqual(stack.Children.Length, 2)
         let label = stack.Children.[0] :?> TestLabel
         Assert.AreEqual(label.Text, "yo2")
-        
+
         // modify the initial one
-        instance.ProcessMessage(ChangeText (1, "just 1"))
+        instance.ProcessMessage(ChangeText(1, "just 1"))
         let label = stack.Children.[1] :?> TestLabel
         Assert.AreEqual(label.Text, "just 1")
-        
+
         // delete the one in front
         instance.ProcessMessage(Delete 2)
         Assert.AreEqual(stack.Children.Length, 1)
         let label = stack.Children.[0] :?> TestLabel
         Assert.AreEqual(label.Text, "just 1")
-        
-        
+
+
 module ReconcilerTests =
     let a = Attributes.define<int> "A" 0
     let b = Attributes.define<string> "B" ""
     let c = Attributes.define<bool> "C" true
-    
+
     [<Test>]
     let CompareAttributes () =
-        let prev = [|a.WithValue(1); b.WithValue("yo")|]
-        let next = [|c.WithValue(false); b.WithValue("aha!")|]
-        
+        let prev = [| a.WithValue(1); b.WithValue("yo") |]
+
+        let next =
+            [|
+                c.WithValue(false)
+                b.WithValue("aha!")
+            |]
+
         let res = Attributes.compareAttributes prev next
         Assert.AreEqual([], res)
         ()
-        

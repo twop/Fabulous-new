@@ -213,6 +213,9 @@ module Attributes =
 type IWidget =
     abstract CreateView : unit -> IViewNode
     abstract Attributes : Attribute []
+    
+and ITypedWidget<'msg> =
+    inherit IWidget
 
 and IViewNode =
     // is this needed?
