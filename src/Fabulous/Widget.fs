@@ -44,7 +44,7 @@ module Attributes =
         interface IAttributeDefinition with
             member this.CompareBoxed(a, b) = this.Compare (unbox<'modelType>a) (unbox<'modelType>b) 
 
-        member x.WithValue(value): Attribute =
+        member inline x.WithValue(value): Attribute =
             {
                 Key = x.Key
                 Value = x.Convert(value)
@@ -62,7 +62,7 @@ module Attributes =
             | Some attr -> Some(unbox<'modelType> attr.Value)
             | None -> None
 
-        member x.Get(attributes: Attribute []) =
+        member inline x.Get(attributes: Attribute []) =
             x.TryGet attributes
             |> Option.defaultValue x.DefaultValue
 
@@ -210,9 +210,16 @@ module Attributes =
 
 
 /// Base logical element
+
+[<Struct>]
+type ViewTreeContext = {
+    Dispatch: obj -> unit
+}
+
 type IWidget =
-    abstract CreateView : unit -> IViewNode
+    abstract CreateView : ViewTreeContext -> IViewNode
     abstract Attributes : Attribute []
+    abstract Source: Type
     
 and ITypedWidget<'msg> =
     inherit IWidget
@@ -238,7 +245,9 @@ and IViewContainer =
 
 and [<RequireQualifiedAccess; Struct>] UpdateResult =
     | Done
-    | UpdateChildren of struct (IViewContainer * IWidget [])
+    | UpdateChildren of struct (IViewContainer * IWidget [] * ViewTreeContext)
+
+
 
 
 module ControlWidget =
@@ -331,7 +340,7 @@ module Reconciler =
         | None -> Some [ item ]
 
     //    let private isSame
-    let rec update (node: IViewNode) (attributes: Attribute []) : unit =
+    let rec update (node: IViewNode) (attributes: Attribute []) (viewContext: ViewTreeContext) : unit =
         let diff =
             Attributes.compareAttributes node.Attributes attributes
 
@@ -340,7 +349,7 @@ module Reconciler =
         else
             match node.ApplyDiff(diff, attributes) with
             | UpdateResult.Done -> ()
-            | UpdateResult.UpdateChildren struct (container, widgets) ->
+            | UpdateResult.UpdateChildren struct (container, widgets, ctx) ->
                 let children = container.Children
 
                 // if the size is the same we can just reuse the same array to avoid allocations
@@ -370,18 +379,18 @@ module Reconciler =
                     match (prev, widget) with
                     | None, widget ->
                         // view doesn't exist yet
-                        let view = widget.CreateView()
+                        let view = widget.CreateView(ctx)
                         target.[i] <- view
                         added <- addItem view added
 
-                    | Some p, widget when widget.GetType() = p.Source ->
+                    | Some p, widget when widget.Source = p.Source ->
                         // same type, just update
                         target.[i] <- p
-                        update p widget.Attributes
+                        update p widget.Attributes ctx
 
                     | Some p, widget ->
                         // different type, thus replacement is needed
-                        let view = widget.CreateView()
+                        let view = widget.CreateView(ctx)
                         target.[i] <- view
                         added <- addItem view added
                         removed <- addItem p removed

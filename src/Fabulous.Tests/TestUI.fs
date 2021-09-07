@@ -31,6 +31,15 @@ module A =
         let AutomationId =
             Attributes.define<string> "AutomationId" ""
 
+    module Runtime =
+        let MapMsgFn =
+            Attributes.createDefinition<obj option>
+                (fun a b -> Attributes.AttributeComparison.Different None)
+                "MapMsgFn"
+                None // TODO fix option
+
+//-------Widgets
+
 type TestLabel(attributes, source) =
     let mutable attributes: Attribute [] = attributes
 
@@ -50,19 +59,21 @@ type TestLabel(attributes, source) =
 type LabelWidget<'msg>(attributes: Attribute []) =
     //    static do register<LabelWidget, TestLabel> () // TODO?
 
-    static member inline Create<'a>(text: string) =
-        LabelWidget<'a>([| A.Text.Text.WithValue(text) |])
+    static member inline Create(text: string) =
+        LabelWidget<'msg>([| A.Text.Text.WithValue(text) |])
 
     interface IWidget with
         member this.Attributes = attributes
+        member this.Source = typeof<LabelWidget<'msg>>
 
-        member this.CreateView() =
-            TestLabel(attributes, typeof<LabelWidget<int>>) :> IViewNode
+        member this.CreateView _ =
+            TestLabel(attributes, typeof<LabelWidget<'msg>>) :> IViewNode
+
 
     interface IControlWidget with
 
         member this.Add(attribute) =
-            addAttribute LabelWidget attributes attribute
+            addAttribute LabelWidget<'msg> attributes attribute
 
     interface ITypedWidget<'msg>
 
@@ -78,17 +89,13 @@ type LabelWidgetExtensions() =
 type IPressable =
     abstract Press : unit -> unit
 
-type TestButton(attributes, source) =
+type TestButton(attributes, source, viewContext: ViewTreeContext) =
     let mutable attributes: Attribute [] = attributes
     member x.Text = A.Text.Text.Get attributes
-    //    member x.ClickMsg = A.Button.Clicked.Get attributes
-
-    // this should be set by runtime
-    member val Dispatch: (obj -> unit) option = None with get, set
 
     member x.Press() =
-        match (x.Dispatch, A.Button.Clicked.Get attributes) with
-        | Some dispatch, Some msg -> dispatch msg
+        match A.Button.Clicked.Get attributes with
+        | Some msg -> viewContext.Dispatch msg
         | _ -> ()
 
     interface IViewNode with
@@ -104,20 +111,25 @@ type TestButton(attributes, source) =
 
 [<Struct>]
 type ButtonWidget<'msg>(attributes: Attribute []) =
+//    let source = typeof<ButtonWidget<'msg>>
+    
     interface IWidget with
         member this.Attributes = attributes
 
-        member this.CreateView() =
-            TestButton(attributes, typeof<ButtonWidget<int>>) :> IViewNode
+        member this.CreateView(ctx) =
+            TestButton(attributes, typeof<ButtonWidget<'msg>>, ctx) :> IViewNode
+
+        member this.Source = typeof<ButtonWidget<'msg>>
 
     interface IControlWidget with
         member this.Add(attribute) =
-            addAttribute ButtonWidget attributes attribute
+            addAttribute ButtonWidget<'msg> attributes attribute
+
 
 
     interface ITypedWidget<'msg>
 
-    static member inline Create<'msg>(text: string, clicked: 'msg) =
+    static member inline Create(text: string, clicked: 'msg) =
         ButtonWidget<'msg>
             [|
                 A.Text.Text.WithValue(text)
@@ -132,23 +144,22 @@ type ButtonWidgetExtensions() =
         this.AddAttribute(A.TextStyle.TextColor.WithValue(value))
 
 ///----Stack----
-type TestStack(attrs: Attribute [], source) =
+type TestStack(attrs: Attribute [], source, ctx) =
     let mutable attributes: Attribute [] = attrs
 
     let mutable children: IViewNode [] =
         A.Container.Children.Get attrs
-        |> Array.map(fun w -> w.CreateView())
+        |> Array.map(fun w -> w.CreateView(ctx))
 
     interface IViewContainer with
         member this.Children = children
         member this.UpdateChildren(upd) = children <- upd.Children
 
-
     interface IViewNode with
         member this.ApplyDiff((diffs, attrs)) =
             attributes <- attrs
             let childrenWidgets = A.Container.Children.Get attrs
-            UpdateResult.UpdateChildren struct (this :> IViewContainer, childrenWidgets)
+            UpdateResult.UpdateChildren struct (this :> IViewContainer, childrenWidgets, ctx)
 
         member this.Source = source
         member this.Attributes = attributes
@@ -158,7 +169,7 @@ type TestStack(attrs: Attribute [], source) =
 
 [<Struct>]
 type StackLayoutWidget<'msg>(attributes: Attribute []) =
-    static member inline Create(children: #seq<ITypedWidget<'m>>) =
+    static member inline Create<'m, 'a when 'a :> seq<ITypedWidget<'m>>>(children: 'a) =
         StackLayoutWidget<'m>(
             [|
                 // TODO what is the right type conversion here? Is there one needed at all?
@@ -170,15 +181,38 @@ type StackLayoutWidget<'msg>(attributes: Attribute []) =
     interface IWidget with
         member this.Attributes = attributes
 
-        member this.CreateView() =
-            TestStack(attributes, typeof<StackLayoutWidget<int>>) :> IViewNode
+        member this.CreateView(ctx) =
+            TestStack(attributes, typeof<StackLayoutWidget<'msg>>, ctx) :> IViewNode
+
+        member this.Source = typeof<StackLayoutWidget<'msg>>
 
 
     interface IControlWidget with
         member this.Add(attribute) =
-            addAttribute StackLayoutWidget attributes attribute
+            addAttribute StackLayoutWidget<'msg> attributes attribute
 
     interface ITypedWidget<'msg>
+
+//--------
+
+// Note that it is ok it to be not a [<Struct>] because it is not intended to be copied
+type MapDispatchWidget<'msg, 'childMsg>(mapFn: 'childMsg -> 'msg, child: ITypedWidget<'childMsg>) =
+    interface IWidget with
+        member this.Attributes = child.Attributes
+
+        member this.CreateView(ctx) =
+            let dispatch (msg: obj) =
+                ctx.Dispatch(unbox<'childMsg> msg |> mapFn |> box)
+
+            child.CreateView({ ctx with Dispatch = dispatch })
+
+        member this.Source = child.Source
+
+    interface ITypedWidget<'msg>
+
+module Widget =
+    let inline map (fn: 'a -> 'b) (widget: ITypedWidget<'a>) : ITypedWidget<'b> =
+        MapDispatchWidget(fn, widget) :> ITypedWidget<'b>
 
 
 //----------
@@ -191,14 +225,14 @@ type SharedExtensions() =
 
     [<Extension>]
     static member inline cast<'msg>(this: ITypedWidget<'msg>) = this
-    
-    
+
+
 ///----------------
 [<AbstractClass; Sealed>]
 type View private () =
-    static member inline Label(text) = LabelWidget<_>.Create (text)
+    static member inline Label<'msg>(text) = LabelWidget<'msg>.Create text
     static member inline Button<'msg>(text, msg) = ButtonWidget<'msg>.Create (text, msg)
-    static member inline Stack(children) = StackLayoutWidget<_>.Create (children)
+    static member inline Stack<'m, 'a when 'a :> seq<ITypedWidget<'m>>>(children:'a) = StackLayoutWidget<_>.Create<'m, 'a> (children)
 
 ///------------------
 type StatefulView<'arg, 'model, 'msg, 'view when 'view :> IWidget> =
@@ -254,7 +288,12 @@ module Run =
         ) =
         let mutable state: ('model * IViewNode) option = None
 
-        member x.ProcessMessage(msg) =
+        member private x.viewContext: ViewTreeContext =
+            {
+                Dispatch = fun msg -> unbox<'msg> msg |> x.ProcessMessage
+            }
+
+        member x.ProcessMessage(msg: 'msg) =
             match state with
             | None -> ()
             | Some (m, viewNode) ->
@@ -266,25 +305,19 @@ module Run =
                 // TODO support mount + unmount
                 // TODO possibly introduce some notion of a platform/runtime context
                 // that can mount and unmount nodes
-                if newWidget.GetType() <> viewNode.Source then
+                if newWidget.Source <> viewNode.Source then
                     failwith "type mismatch!"
 
                 state <- Some(newModel, viewNode)
 
-                Reconciler.update viewNode newWidget.Attributes
+                Reconciler.update viewNode newWidget.Attributes x.viewContext
 
                 ()
 
         member x.Start(arg: 'arg) =
             let model = (program.Init(arg))
             let widget = program.View(model)
-            let view = widget.CreateView()
-
-            match view with
-            // TODO generalize this code somehow
-            | :? TestButton as btn -> btn.Dispatch <- Some(fun msgObj -> x.ProcessMessage(unbox<'msg> msgObj))
-            | _ -> ()
-
+            let view = widget.CreateView(x.viewContext)
 
             state <- Some(model, view)
 
